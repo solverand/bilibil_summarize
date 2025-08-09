@@ -1,11 +1,13 @@
 import httpx
 import json
+from config import settings
+
 
 def load_cookie() -> dict:
     """用于加载cookie"""
     try:
-        file = open('cookie/cookie.json', 'r')
-        cookie = dict(json.load(file))
+        with open(settings.cookie_path, 'r') as file:
+            cookie = dict(json.load(file))
     except FileNotFoundError:
         msg = '未查询到 Cookie 文件，请确认资源完整'
         cookie = {}
@@ -24,14 +26,15 @@ def get_bvids():
         data = data.json()
 
     bvids = []
-    for item in data["data"]["items"]:
-        dynamic_module = item["modules"]["module_dynamic"]["major"]
+    for item in data.get("data", {}).get("items", []):
+        dynamic_module = item.get("modules", {}).get("module_dynamic", {}).get("major")
 
         if dynamic_module is None or "archive" not in dynamic_module or dynamic_module["archive"] is None:
             continue
 
-        bvid_value = dynamic_module["archive"]["bvid"]
-        bvids.append(bvid_value)
+        bvid_value = dynamic_module["archive"].get("bvid")
+        if bvid_value:
+            bvids.append(bvid_value)
     return bvids
 
 

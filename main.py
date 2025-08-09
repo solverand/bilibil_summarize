@@ -1,6 +1,5 @@
 import os
 
-
 # from langchain.globals import set_debug
 # set_debug(True)
 
@@ -14,10 +13,10 @@ from langchain_openai import ChatOpenAI
 from langchain_openai import OpenAIEmbeddings
 from langchain_community.document_loaders import UnstructuredMarkdownLoader
 
-from utils import get_record_manager, clear_vectorstore, bilibli_index
+# from utils import get_record_manager, clear_vectorstore, bilibli_index
 from splitter import Splitter
-from config import config
-from load import load_markdown
+# from config import config
+# from load import load_markdown
 from pprint import pprint
 
 import get_bilibili_vid
@@ -25,10 +24,10 @@ import download_video_tool
 import asyncio
 
 from langchain.agents import AgentExecutor, XMLAgent, tool, Tool, initialize_agent, AgentType
-import moviepy.editor as mp
+import moviepy as mp
 from openai import OpenAI
 from langchain.chains.summarize import load_summarize_chain
-from langchain.document_loaders import TextLoader
+from langchain_community.document_loaders import TextLoader
 from langchain_core.runnables import chain
 from langchain_core.runnables import RunnableLambda
 from operator import itemgetter
@@ -39,74 +38,54 @@ import time
 import json
 import requests
 
-
-def init_vectorstore() -> None:
-    # text_splitter = Splitter.from_tiktoken_encoder(
-    #     chunk_size=config.CHUNK_SIZE, chunk_overlap=config.CHUNK_OVERLAP
-    # )
-    # loader = UnstructuredMarkdownLoader('data/aQ.md')
-    # docs = loader.load()
-    # splits = text_splitter.split_documents(docs)
-    # vectorstore = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings(), persist_directory='bilibili')
-
-    markdown_path = "data/aQ.md"
-
-    loader = UnstructuredMarkdownLoader(markdown_path)
-    docs = loader.load()
-    print(docs)
-
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=40)
-    splits = text_splitter.split_documents(docs)
-    vectorstore = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings())
+from config import settings, ensure_directories
 
 
-    print(docs)
-    print(splits)
-    print(vectorstore)
-
-    info = bilibli_index(docs)
-    print(info)
-    pprint(info)
+# def init_vectorstore() -> None:
+#     markdown_path = "data/aQ.md"
+#     loader = UnstructuredMarkdownLoader(markdown_path)
+#     docs = loader.load()
+#     text_splitter = RecursiveCharacterTextSplitter(chunk_size=100, chunk_overlap=40)
+#     splits = text_splitter.split_documents(docs)
+#     vectorstore = Chroma.from_documents(documents=splits, embedding=OpenAIEmbeddings())
+#     # info = bilibli_index(docs)
 
 
 @tool
 def mp4_2_mp3(bvids):
     """将MP4文件转换为MP3文件。"""
-    videos_file_path = os.path.join(r'C:\Users\Administrator\Desktop\Bilibili2\static\video', f"{bvids}.mp4")
+    videos_file_path = os.path.join(str(settings.video_dir), f"{bvids}.mp4")
     my_clip = mp.VideoFileClip(videos_file_path)
-    my_clip.audio.write_audiofile(os.path.join(r'C:\Users\Administrator\Desktop\Bilibili2\static\speech', f'{os.path.splitext(bvids)[0]}.mp3'))
+    my_clip.audio.write_audiofile(os.path.join(str(settings.speech_dir), f"{os.path.splitext(bvids)[0]}.mp3"))
     return bvids
+
 
 @tool
 def mp3_2_text(bvids):
     """将MP3文件转换为txt文本。"""
-    client = OpenAI(
-        api_key="sk-8DfsD4B1Kfs096y01066435cE6B0419cB5965cB8679c2d59",
-        base_url="https://oneapi.xty.app/v1"
-    )
+    client_kwargs = {}
+    if settings.openai_api_key:
+        client_kwargs["api_key"] = settings.openai_api_key
+    if settings.openai_base_url:
+        client_kwargs["base_url"] = settings.openai_base_url
+    client = OpenAI(**client_kwargs)
 
-    path = r'C:\Users\Administrator\Desktop\Bilibili2\static\speech'
-    output_path = r'C:\Users\Administrator\Desktop\Bilibili2\static\text'
-    speech_path = os.path.join(path, f"{bvids}.mp3")
-    print(speech_path)
+    speech_path = os.path.join(str(settings.speech_dir), f"{bvids}.mp3")
+    output_path = settings.text_dir
     retry_limit = 3
     retry_count = 0
 
     while retry_count < retry_limit:
         try:
-            audio_file = open(speech_path, "rb")
-            transcript = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file,
-                response_format="json"
-            )
-            print(transcript.text)
-
-            output_file_path = os.path.join(output_path, f"{bvids}.txt")
+            with open(speech_path, "rb") as audio_file:
+                transcript = client.audio.transcriptions.create(
+                    model=settings.whisper_model,
+                    file=audio_file,
+                    response_format="json",
+                )
+            output_file_path = os.path.join(str(output_path), f"{bvids}.txt")
             with open(output_file_path, 'w', encoding='utf-8') as text_file:
                 text_file.write(transcript.text)
-
-            print(f'Transcript saved to: {output_file_path}')
             return bvids
         except Exception as e:
             print(f'Error: {e}')
@@ -117,13 +96,14 @@ def mp3_2_text(bvids):
     print(f'Failed to transcribe {bvids} after {retry_limit} attempts')
     return bvids
 
+
 @tool
 def summarize_text(bvids):
     """将文本发送给模型进行总结。"""
     llm = ChatOpenAI(temperature=0)
     chain = load_summarize_chain(llm, chain_type="map_reduce", verbose=True)
-    base_dir = r'C:\Users\Administrator\Desktop\Bilibili2\static\text'
-    output_path = r'C:\Users\Administrator\Desktop\Bilibili2\static\summarize'
+    base_dir = str(settings.text_dir)
+    output_path = settings.summary_dir
     file_name = f"{bvids}.txt"
     file_path = os.path.join(base_dir, file_name)
     documents = []
@@ -140,11 +120,9 @@ def summarize_text(bvids):
     while retry_count < retry_limit:
         try:
             output_summary = chain.run(documents)
-            output_file_path = os.path.join(output_path, f"{bvids}.txt")
+            output_file_path = os.path.join(str(output_path), f"{bvids}.txt")
             with open(output_file_path, 'w', encoding='utf-8') as output_file:
                 output_file.write(output_summary)
-
-            wrapped_text = textwrap.fill(output_summary, width=100)
             return bvids
         except Exception as e:
             print(f'Error: {e}')
@@ -155,12 +133,13 @@ def summarize_text(bvids):
     print(f'Failed to summarize {bvids} after {retry_limit} attempts')
     return None
 
+
 @tool
 def create_bilibili_dynamic(bvids):
     """创建Bilibili动态"""
     try:
-        file = open(f'cookie/cookie.json', 'r')
-        cookie = dict(json.load(file))
+        with open(settings.cookie_path, 'r') as file:
+            cookie = dict(json.load(file))
     except FileNotFoundError:
         msg = '未查询到用户文件，请确认资源完整'
         cookie = 'null'
@@ -173,8 +152,7 @@ def create_bilibili_dynamic(bvids):
         "Cookie": "; ".join([f"{key}={value}" for key, value in cookie.items()])
     }
 
-    path = r'C:\Users\Administrator\Desktop\Bilibili2\static\summarize'
-    text_path = os.path.join(path, f"{bvids}.txt")
+    text_path = os.path.join(str(settings.summary_dir), f"{bvids}.txt")
     with open(text_path, 'r', encoding='utf-8') as file:
         prompt_content = file.read()
 
@@ -205,6 +183,7 @@ def get_cid_by_bvid(bvid):
     cid = data['data'][0]['cid']
     return cid
 
+
 def agent_generate_bvid_resources(bvid):
     tool_list = [mp4_2_mp3, mp3_2_text, summarize_text, create_bilibili_dynamic]
 
@@ -219,10 +198,11 @@ def agent_generate_bvid_resources(bvid):
 
     agent.invoke(prompt_template.format(input=bvid)).get("output")
 
+
 @tool
 def get_sources_text(bvid):
     """获取本地资源文件中的bvid对应的text内容"""
-    base_dir = r'C:\Users\Administrator\Desktop\Bilibili2\static\text'
+    base_dir = str(settings.text_dir)
     file_name = f"{bvid}.txt"
     file_path = os.path.join(base_dir, file_name)
 
@@ -233,12 +213,11 @@ def get_sources_text(bvid):
     else:
         print(f"File {file_name} not found or is not a .txt file.")
 
+
 @chain
 def get_sources_summarize(bvid):
-    # """获取本地资源文件中的bvid对应txt文档的内容"""
-    base_dir = r'C:\Users\Administrator\Desktop\Bilibili2\static\summarize'
+    base_dir = str(settings.summary_dir)
     bvid = bvid['bvid']
-    print(bvid)
 
     file_name = f"{bvid}.txt"
     file_path = os.path.join(base_dir, file_name)
@@ -292,6 +271,8 @@ def agent_get_iframe_by_bvid(bvid):
 
     iframe = agent_executor.invoke({"question":question_template.format(bvid=bvid)}).get("output")
     return iframe
+
+
 @chain
 def agent_get_sources_summarize(bvid):
     tool_list = [get_sources_summarize]
@@ -332,6 +313,7 @@ def agent_get_sources_summarize(bvid):
     summarize = agent_executor.invoke({"question":question_template.format(bvid=bvid)}).get("output")
     print(summarize)
     return summarize
+
 
 @chain
 def agent_get_sources_text(bvid):
@@ -376,7 +358,7 @@ def get_analyze(input):
 
     chain_analyze_tetx_to_markdown = {"text": RunnablePassthrough()} | prompt_analyze | model | StrOutputParser()
 
-    output_path = r'C:\Users\Administrator\Desktop\Bilibili2\static\analyze'
+    output_path = settings.analyze_dir
 
     retry_limit = 3
     retry_count = 0
@@ -384,11 +366,10 @@ def get_analyze(input):
     while retry_count < retry_limit:
         try:
             output_analyze = chain_analyze_tetx_to_markdown.invoke(text)
-            output_file_path = os.path.join(output_path, f"{bvid}.txt")
+            output_file_path = os.path.join(str(output_path), f"{bvid}.txt")
             with open(output_file_path, 'w', encoding='utf-8') as output_file:
                 output_file.write(output_analyze)
 
-            wrapped_text = textwrap.fill(output_analyze, width=100)
             return {"bvid":bvid,"text":output_analyze}
         except Exception as e:
             print(f'Error: {e}')
@@ -423,10 +404,10 @@ def extract_analyze_and_bold_keywords(input):
     chain_extract = {"text": RunnablePassthrough()} | prompt_extract | model | StrOutputParser()
 
 
-    base_dir = r'C:\Users\Administrator\Desktop\Bilibili2\static\analyze'
-    output_path = r'C:\Users\Administrator\Desktop\Bilibili2\static\analyze'
+    base_dir = settings.analyze_dir
+    output_path = settings.analyze_dir
     file_name = f"{bvid}.txt"
-    file_path = os.path.join(base_dir, file_name)
+    file_path = os.path.join(str(base_dir), file_name)
     documents = []
 
     if os.path.exists(file_path) and file_path.endswith('.txt'):
@@ -441,13 +422,11 @@ def extract_analyze_and_bold_keywords(input):
     while retry_count < retry_limit:
         try:
             output_analyze = chain_extract.invoke(text)
-            output_file_path = os.path.join(output_path, f"{bvid}.txt")
+            output_file_path = os.path.join(str(output_path), f"{bvid}.txt")
             with open(output_file_path, 'w', encoding='utf-8') as output_file:
                 output_file.write(output_analyze)
 
-            wrapped_text = textwrap.fill(output_analyze, width=100)
             return {"bvid":bvid,"text":output_analyze}
-            # return output_analyze
         except Exception as e:
             print(f'Error: {e}')
             retry_count += 1
@@ -456,7 +435,6 @@ def extract_analyze_and_bold_keywords(input):
 
     print(f'Failed to summarize {bvid} after {retry_limit} attempts')
     return None
-
 
 
 @chain
@@ -472,10 +450,10 @@ def prompt_keywords_to_link(input):
         input_variables=["text"]
     )
     chain_prompt_keywords_to_link ={"text": RunnablePassthrough() } | prompt_keywords_to_link | model | StrOutputParser()
-    base_dir = r'C:\Users\Administrator\Desktop\Bilibili2\static\analyze'
-    output_path = r'C:\Users\Administrator\Desktop\Bilibili2\static\analyze'
+    base_dir = settings.analyze_dir
+    output_path = settings.analyze_dir
     file_name = f"{bvid}.txt"
-    file_path = os.path.join(base_dir, file_name)
+    file_path = os.path.join(str(base_dir), file_name)
     documents = []
 
     if os.path.exists(file_path) and file_path.endswith('.txt'):
@@ -490,12 +468,10 @@ def prompt_keywords_to_link(input):
     while retry_count < retry_limit:
         try:
             output_analyze = chain_prompt_keywords_to_link.invoke(text)
-            output_file_path = os.path.join(output_path, f"{bvid}.txt")
+            output_file_path = os.path.join(str(output_path), f"{bvid}.txt")
             with open(output_file_path, 'w', encoding='utf-8') as output_file:
                 output_file.write(output_analyze)
 
-            wrapped_text = textwrap.fill(output_analyze, width=100)
-            # return {"bvid":bvid,"text":output_analyze}
             return output_analyze
         except Exception as e:
             print(f'Error: {e}')
@@ -505,6 +481,7 @@ def prompt_keywords_to_link(input):
 
     print(f'Failed to summarize {bvid} after {retry_limit} attempts')
     return None
+
 
 def generate_markdown(bvid):
 
@@ -539,7 +516,6 @@ def generate_markdown(bvid):
         input_variables=["iframe", "summarize", "analyze"]
     )
 
-    # 怎么将传入的字典类型{}中某一个键具体的值传递给{a:"",b:""}其中一个
     chain_generate_markdown = (
         {
             "iframe": agent_get_iframe_by_bvid,
@@ -551,17 +527,16 @@ def generate_markdown(bvid):
         | StrOutputParser()
     )
 
-    output_path = r'C:\Users\Administrator\Desktop\Bilibili2\static\post'
+    output_path = settings.post_dir
     retry_limit = 3
     retry_count = 0
     while retry_count < retry_limit:
         try:
             markdown = chain_generate_markdown.invoke({"bvid": bvid})
-            output_file_path = os.path.join(output_path, f"{bvid}.md")
+            output_file_path = os.path.join(str(output_path), f"{bvid}.md")
             with open(output_file_path, 'w', encoding='utf-8') as output_file:
                 output_file.write(markdown)
 
-            wrapped_text = textwrap.fill(markdown, width=100)
             return markdown
         except Exception as e:
             print(f'Error: {e}')
@@ -574,25 +549,22 @@ def generate_markdown(bvid):
 
 
 if __name__ == '__main__':
-    # init_vectorstore()
+    ensure_directories()
 
     # 打开文件并逐行读取内容
-    with open('cache/cache_bvids.txt', 'r') as file:
-        # 读取文件内容，将每行作为列表的一个元素
-        cache_bvids = [line.strip() for line in file]
+    if settings.cache_bvids_path.exists():
+        with open(settings.cache_bvids_path, 'r') as file:
+            cache_bvids = [line.strip() for line in file]
+    else:
+        cache_bvids = []
 
     # 新更视频
     new_bvids = get_bilibili_vid.get_bvids()
     increment_bvids = list(set(new_bvids) - set(cache_bvids))
 
-    increment_bvids = ['BV1AS421N7Rc']
     for bvid in increment_bvids:
         asyncio.get_event_loop().run_until_complete(download_video_tool.download_video(bvid))
 
     for bvid in increment_bvids:
-        # 3. 将下载的视频转换为mp3格式
-        # 4. 将mp3传给大模型转文字
-        # 5. 大模型摘要文本
-        # 6. 将摘要内容发在B站
         agent_generate_bvid_resources(bvid)
         generate_markdown(bvid)
