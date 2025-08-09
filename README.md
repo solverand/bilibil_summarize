@@ -1,3 +1,24 @@
+# 快速开始
+
+- 安装依赖：
+  ```bash
+  pip install -r requirements.txt
+  ```
+- 配置环境变量（可选，参见 `.env.example`），至少需要：
+  - `OPENAI_API_KEY`
+  - 如使用自建网关：`OPENAI_BASE_URL`
+- 放置 B 站登录 Cookie 到 `cookie/cookie.json`（浏览器导出后按现有示例键名保存）。
+- 运行：
+  ```bash
+  python main.py
+  ```
+
+目录与路径均已适配 Linux，输出文件位于 `static/` 下的对应目录：
+- `static/video`、`static/speech`、`static/text`
+- `static/summary`、`static/analyze`、`static/post`
+
+---
+
 # 更新日志
 
 ## - ⛳️ 2024.7.29

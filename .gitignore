@@ -1,2 +1,31 @@
+# macOS
 .DS_Store
-.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+
+# LangChain / Chroma
+chroma_db/
+.cache/
+
+# Project data
+static/video/
+static/speech/
+static/html/
+static/search/
+static/handle_analyze/
+static/post/*.md
+static/summary/*.txt
+static/analyze/*.txt
+static/text/*.txt
+
+# OS
+Thumbs.db

@@ -1,0 +1,25 @@
+# Core
+langchain>=0.2.11
+langchain-openai>=0.1.17
+langchain-community>=0.2.10
+langchain-core>=0.2.36
+openai>=1.37.2
+httpx>=0.27.0
+requests>=2.32.3
+
+# Data loaders / vectorstore (optional path in code)
+unstructured>=0.14.9
+chromadb>=0.5.5
+
+# Media processing
+moviepy>=1.0.3
+imageio>=2.34.2
+imageio-ffmpeg>=0.5.1
+
+# Bilibili API
+bilibili-api-python>=16.2.0
+
+# Utils
+python-dotenv>=1.0.1
+pydantic>=2.7.4
+numpy>=1.26.4
